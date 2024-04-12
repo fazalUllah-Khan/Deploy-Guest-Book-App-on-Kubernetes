@@ -1,0 +1,198 @@
+thor@jump_host ~$ kubectl get all
+NAME                 TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+service/kubernetes   ClusterIP   10.96.0.1    <none>        443/TCP   36m
+thor@jump_host ~$ vi /tmp/Back-end-Deploy-Redis-Master-Guest-Book-App.yaml
+thor@jump_host ~$ cat /tmp/Back-end-Deploy-Redis-Master-Guest-Book-App.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-master
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-master
+      tier: back-end
+  template:
+    metadata:
+      labels:
+        app: redis-master
+        tier: back-end
+    spec:
+      containers:
+        - name: master-redis-nautilus
+          image: redis
+          resources:
+            requests:
+              memory: "100Mi"
+              cpu: "100m"
+          ports:
+            - containerPort: 6379
+
+thor@jump_host ~$ vi /tmp/Back-end-Deploy-Redis-slave-Guest-Book-App.yaml
+thor@jump_host ~$ cat /tmp/Back-end-Deploy-Redis-slave-Guest-Book-App.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-slave
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: redis-slave
+      tier: back-end
+  template:
+    metadata:
+      labels:
+        app: redis-slave
+        tier: back-end
+    spec:
+      containers:
+        - name: slave-redis-nautilus 
+          image: gcr.io/google_samples/gb-redisslave:v3
+          resources:
+            requests:
+              memory: "100Mi"
+              cpu: "100m"
+          env:
+            - name: GET_HOSTS_FROM
+              value: dns
+          ports:
+            - containerPort: 6379
+
+thor@jump_host ~$ vi /tmp/Back-end-service-Redis-Master-Guest-Book-App.yaml
+thor@jump_host ~$ cat /tmp/Back-end-service-Redis-Master-Guest-Book-App.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-master
+spec:
+  type: ClusterIP
+  selector:
+    app: redis-master
+    tier: back-end
+  ports:
+    - port: 6379
+      targetPort: 6379
+
+
+thor@jump_host ~$ vi /tmp/Back-end-service-Redis-slave-Guest-Book-App.yaml
+thor@jump_host ~$ cat /tmp/Back-end-service-Redis-slave-Guest-Book-App.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-slave
+spec:
+  type: ClusterIP
+  selector:
+    app: redis-slave
+    tier: back-end
+  ports:
+    - port: 6379
+      targetPort: 6379
+
+
+thor@jump_host ~$ vi /tmp/Front-end-Deploy-Redis-php-Guest-Book-App.yaml
+thor@jump_host ~$ cat /tmp/Front-end-Deploy-Redis-php-Guest-Book-App.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: guestbook
+      tier: front-end
+  template:
+    metadata:
+      labels:
+        app: guestbook
+        tier: front-end
+    spec:
+      containers:
+        - name: php-redis-nautilus
+          image: gcr.io/google-samples/gb-frontend@sha256:cbc8ef4b0a2d0b95965e0e7dc8938c270ea98e34ec9d60ea64b2d5f2df2dfbbf
+          resources:
+            requests:
+              memory: "100Mi"
+              cpu: "100m"
+          env:
+            - name: GET_HOSTS_FROM
+              value: dns
+          ports:
+            - containerPort: 80
+
+thor@jump_host ~$ vi /tmp/Front-end-service-Redis-php-Guest-Book-App.yaml
+thor@jump_host ~$ cat /tmp/Front-end-service-Redis-php-Guest-Book-App.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  type: NodePort
+  selector:
+    app: guestbook
+    tier: front-end
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30009
+
+
+thor@jump_host ~$ kubectl create -f /tmp/Back-end-Deploy-Redis-Master-Guest-Book-App.yaml
+deployment.apps/redis-master created
+thor@jump_host ~$ kubectl create -f /tmp/Back-end-Deploy-Redis-slave-Guest-Book-App.yaml
+deployment.apps/redis-slave created
+thor@jump_host ~$ kubectl create -f /tmp/Back-end-service-Redis-Master-Guest-Book-App.yaml
+service/redis-master created
+thor@jump_host ~$ kubectl create -f /tmp/Back-end-service-Redis-slave-Guest-Book-App.yaml
+service/redis-slave created
+thor@jump_host ~$ kubectl create -f /tmp/Front-end-Deploy-Redis-php-Guest-Book-App.yaml
+deployment.apps/frontend created
+thor@jump_host ~$ kubectl create -f /tmp/Front-end-service-Redis-php-Guest-Book-App.yaml
+service/frontend created
+thor@jump_host ~$ kubectl get all
+NAME                               READY   STATUS    RESTARTS   AGE
+pod/frontend-7b85c5c84-c6p7p       1/1     Running   0          20s
+pod/frontend-7b85c5c84-mvsgd       1/1     Running   0          20s
+pod/frontend-7b85c5c84-x247t       1/1     Running   0          20s
+pod/redis-master-564c5c9d4-69dhr   1/1     Running   0          77s
+pod/redis-slave-79db966fd7-669h2   1/1     Running   0          53s
+pod/redis-slave-79db966fd7-kjs5n   1/1     Running   0          53s
+
+NAME                   TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE
+service/frontend       NodePort    10.96.196.168   <none>        80:30009/TCP   9s
+service/kubernetes     ClusterIP   10.96.0.1       <none>        443/TCP        49m
+service/redis-master   ClusterIP   10.96.92.124    <none>        6379/TCP       38s
+service/redis-slave    ClusterIP   10.96.244.53    <none>        6379/TCP       30s
+
+NAME                           READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/frontend       3/3     3            3           20s
+deployment.apps/redis-master   1/1     1            1           77s
+deployment.apps/redis-slave    2/2     2            2           53s
+
+NAME                                     DESIRED   CURRENT   READY   AGE
+replicaset.apps/frontend-7b85c5c84       3         3         3       20s
+replicaset.apps/redis-master-564c5c9d4   1         1         1       77s
+replicaset.apps/redis-slave-79db966fd7   2         2         2       53s
+thor@jump_host ~$ kubectl exec pod/frontend-7b85c5c84-c6p7p  -- curl -I http://localhost/               % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 HTTP/1.1 200 OK
+Date: Fri, 12 Apr 2024 14:53:16 GMT
+Server: Apache/2.4.25 (Debian)
+Last-Modified: Mon, 30 Jul 2018 19:47:46 GMT
+ETag: "399-5723cbc481c80"
+Accept-Ranges: bytes
+Content-Length: 921
+Vary: Accept-Encoding
+Content-Type: text/html
+
+  0   921    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+thor@jump_host ~$
